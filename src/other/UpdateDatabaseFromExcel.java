@@ -1,15 +1,20 @@
 package other;
 
+import java.io.BufferedWriter;
+import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.apache.commons.collections4.map.HashedMap;
 import org.apache.poi.xssf.usermodel.XSSFCell;
 import org.apache.poi.xssf.usermodel.XSSFRow;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
@@ -36,7 +41,7 @@ public class UpdateDatabaseFromExcel {
 			int rows = sheet.getPhysicalNumberOfRows();    // 행의 수
 			XSSFRow row = null;
 			
-			for (rowindex = 1; rowindex < rows; rowindex++) {	// 행의 수만큼 반복
+			for (rowindex = 0; rowindex < rows; rowindex++) {	// 행의 수만큼 반복
 
 				row = sheet.getRow(rowindex);	// rowindex 에 해당하는 행을 읽는다
 				ArrayList<String> filter = new ArrayList<String>();	// 한 행을 읽어서 저장할 변수 선언
@@ -77,74 +82,84 @@ public class UpdateDatabaseFromExcel {
 			}
 		}
 		fis.close();	//파일 읽기 종료
+		
 		return filters;	//리스트 반환
 	}
 	
 	/**
 	3. toText 함수 : insert 쿼리를 생성해서 readFilter 함수로 읽어왔던 ArrayList 들을 읽어와서 한줄씩 출력하는 함수이다.
 	*/
-	public void toText(ArrayList<ArrayList<String>> list) throws IOException {
+	public void toText(ArrayList<ArrayList<String>> rowList, String filePath) throws IOException {
+		ArrayList<String> header = rowList.remove(0);
+		int appendCount = 100;
 		
-		String tableName = "";
-		ArrayList<String> tableCulnms = null;
-		String dbType = "";
-		String insertStr = "INSERT INTO show_attribute_om (agentid, date, site_nm, source_type, title, content, polarity, pos_kw, pos_cnt, neg_kw, neg_cnt, attribute, filter_kw, url) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+		String tableName = "TEST_TABLE";
+		String dbType = "MYSQL";
+		String insertStr = "";
 		ArrayList<String> result = new ArrayList<String>();
 		
-		for(String str : tableCulnms) {
-			if(dbType.equals("ORACLE")) {
-				insertStr += "" + ",";
-			}else if(dbType.equals("MYSQL")) {
-				insertStr += "" + ",";
-			}
-		}
-		
-		for (int i = 0; i < tableCulnms.size(); i++) {
-			if(i == 0 || i % 1000 == 0) {
-				if(dbType.equals("ORACLE")) {
-					insertStr += "";
-				}else if(dbType.equals("MYSQL")) {
-					insertStr += "";
+		insertStr += "INSERT INTO " + tableName + " (";
+		if(dbType.equals("ORACLE")) {
+			insertStr += "";
+			
+			for(ArrayList<String> line : rowList) {
+				String str = "";
+				for(int i = 0; i < line.size(); i++) {
 				}
+				str += "";
+				result.add(str);
 			}
 			
-		}
-		  
-
-		System.out.println("총 라인 수 : "+list.size());
-		
-		try {
-			String temp = ""; 
-			String temptitle = "";
-
-			for(int i=0; i<list.size(); i++) {      //매개변수로 받아온 ArrayList 의 길이만큼 반복한다.
-
-	            //읽어온 각 셀들이 자신이 생성해준 table 제약조건과 일치하지 않을 경우 SqlException이 발생한다.
-	            //그러한 조건이 발생하면 continue 를 해주는 부분을 추가해주면 된다.
-				if(list.get(i).isEmpty()) continue;	//행에 값이 없을 경우에 그 행을 제외하고 진행
+		}else if(dbType.equals("MYSQL")) 
+		{
+			for(int i = 0; i < header.size(); i++) {
+				insertStr += header.get(i);
 				
-				//테이블이 utf-8 이라면 이모티콘은 utf-8 형식에 어긋나므로 content, title에서 이모티콘만 제거한다.
-				Pattern emoticons = Pattern.compile("[\\uD83C-\\uDBFF\\uDC00-\\uDFFF]+");
-				Matcher emoticonsMatcher = emoticons.matcher(temp);
-				temp = emoticonsMatcher.replaceAll("");
-				emoticonsMatcher=emoticons.matcher(temptitle);
-				temptitle = emoticonsMatcher.replaceAll("");
-				
-				//앞의 쿼리에서 물음표에 들어갈 항목들을 순서대로 기입
-				
-				//update query 실행
-				
-				if(i%1000==0) {
-					System.out.println(i+"번 라인 쓰는 중...");
-				}
+				if(i < header.size() -1) insertStr += ", ";
 			}
-
-			System.out.println("insert를 완료했습니다.");
-			   
-		} catch (Exception e) {
-			e.printStackTrace();
-		} 
+			
+			insertStr += ") VALUES";
+			result.add(insertStr);
+			
+			int lowCount = 0;
+			for(ArrayList<String> row : rowList) 
+			{
+				String str = "(";
+				for(int i = 0; i < row.size(); i++) {
+					str += "'" + row.get(i) + "'";
+					
+					if(i < row.size() -1) str += ",";
+				}
+				str += (rowList.get(rowList.size() - 1) != row && lowCount % appendCount != 0) ? ")," : ")";
+				result.add(str);
+				if(lowCount != 0 && lowCount % appendCount == 0) {
+					result.add(insertStr);
+				}
+				lowCount++;
+			}
+		}
 		
+		
+		System.out.println("총 라인 수 : "+rowList.size());
+		
+		File file = new File(filePath + "insertText.txt"); // File객체 생성 
+		if(!file.exists()){ // 파일이 존재하지 않으면 
+			file.createNewFile();
+		}
+		file.createNewFile(); // 신규생성 
+		
+		// BufferedWriter 생성 
+		BufferedWriter writer = new BufferedWriter(new FileWriter(file, false)); 
+		
+		// 파일에 쓰기 
+		for(int i = 0; i < result.size(); i++) {
+			writer.write(result.get(i)); 
+			System.out.println(result.get(i));
+			writer.newLine(); 
+		}
+		writer.flush(); // 버퍼의 남은 데이터를 모두 쓰기 
+		writer.close(); // 스트림 종료
+
 	 }
 	
 	/**
